@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstdint>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -41,6 +42,7 @@ struct NtripNodeConfig
 {
   universal_gnss_ntrip::NtripConfig ntrip{};
   universal_gnss_transport::TcpClientConfig tcp{};
+  std::chrono::nanoseconds correction_stale_after{std::chrono::seconds(5)};
   bool tls_enabled{false};
 };
 
@@ -200,6 +202,7 @@ NtripNodeConfig LoadNtripNodeConfig(rclcpp::Node& node)
   config.ntrip.password = node.declare_parameter<std::string>("password", "");
   config.ntrip.send_gga = node.declare_parameter<bool>("gga_enabled", false);
   const auto gga_interval_s = node.declare_parameter<std::int64_t>("gga_interval_s", 10);
+  const auto rtcm_stale_timeout_s = node.declare_parameter<double>("rtcm_stale_timeout_s", 5.0);
   config.tls_enabled = node.declare_parameter<bool>("tls_enabled", false);
 
   if (config.ntrip.host.empty())
@@ -223,6 +226,16 @@ NtripNodeConfig LoadNtripNodeConfig(rclcpp::Node& node)
     ThrowInvalidParameter(node, "gga_interval_s", "must be in the 1..86400 range");
   }
   config.ntrip.gga_interval_s = static_cast<std::uint32_t>(gga_interval_s);
+
+  if (!std::isfinite(rtcm_stale_timeout_s) || rtcm_stale_timeout_s <= 0.0 ||
+      rtcm_stale_timeout_s > 86400.0)
+  {
+    ThrowInvalidParameter(node,
+                          "rtcm_stale_timeout_s",
+                          "must be finite, positive, and no greater than 86400 seconds");
+  }
+  config.correction_stale_after = std::chrono::nanoseconds(
+      static_cast<std::chrono::nanoseconds::rep>(rtcm_stale_timeout_s * 1000000000.0));
 
   if (config.tls_enabled)
   {
@@ -248,8 +261,6 @@ struct NtripNode::Impl
   static constexpr std::chrono::seconds kGnssInputGracePeriod{3};
   static constexpr std::chrono::seconds kGnssInputStaleTimeout{5};
   static constexpr std::chrono::seconds kCorrectionStartupGrace{3};
-  static constexpr universal_gnss_protocols::ProtocolTimestampNs kCorrectionStaleAfterNs =
-      5000000000LL;
   static constexpr universal_gnss_protocols::ProtocolTimestampNs
       kCorrectionRequirementWindowNs = 30000000000LL;
   static constexpr universal_gnss_protocols::ProtocolTimestampNs
@@ -336,6 +347,7 @@ struct NtripNode::Impl
     advanced = EnsureConnected(now_ns) || advanced;
     advanced = EnsureRequestSent(now_ns) || advanced;
     advanced = ReadOnce(now_ns) || advanced;
+    advanced = EnsureFreshCorrectionStream(now_ns) || advanced;
     advanced = MaybeInjectGga(now_ns) || advanced;
     return advanced;
 #else
@@ -513,6 +525,38 @@ struct NtripNode::Impl
 #endif
   }
 
+  bool EnsureFreshCorrectionStream(const universal_gnss::GnssTimestampNs now_ns)
+  {
+#if defined(__linux__) && defined(UNIVERSAL_GNSS_TRANSPORT_HAS_TCP_CLIENT)
+    if (!client_.has_value() ||
+        client_->state() != universal_gnss_ntrip::NtripClientState::kStreaming)
+    {
+      return false;
+    }
+
+    if (client_->metrics().rtcm_frames_received == 0u)
+    {
+      if (first_streaming_time_.has_value() &&
+          SteadyClock::now() - *first_streaming_time_ > config_.correction_stale_after)
+      {
+        return FailStaleCorrectionStream(now_ns);
+      }
+      return false;
+    }
+
+    const auto frame_age_ns = client_->correction_monitor().AgeSinceLastFrameNs(now_ns);
+    if (frame_age_ns.has_value() && *frame_age_ns > config_.correction_stale_after.count())
+    {
+      return FailStaleCorrectionStream(now_ns);
+    }
+
+    return false;
+#else
+    (void)now_ns;
+    return false;
+#endif
+  }
+
   bool MaybeInjectGga(const universal_gnss::GnssTimestampNs now_ns)
   {
 #if defined(__linux__) && defined(UNIVERSAL_GNSS_TRANSPORT_HAS_TCP_CLIENT)
@@ -535,6 +579,24 @@ struct NtripNode::Impl
     }
 
     return result.sent();
+#else
+    (void)now_ns;
+    return false;
+#endif
+  }
+
+  bool FailStaleCorrectionStream(const universal_gnss::GnssTimestampNs now_ns)
+  {
+#if defined(__linux__) && defined(UNIVERSAL_GNSS_TRANSPORT_HAS_TCP_CLIENT)
+    if (!client_.has_value())
+    {
+      return false;
+    }
+
+    const auto error = client_->Fail(universal_gnss_ntrip::NtripClientError::kTimeout, now_ns);
+    LogClientTransition(client_->state(), error);
+    first_streaming_time_.reset();
+    return true;
 #else
     (void)now_ns;
     return false;
@@ -564,7 +626,7 @@ struct NtripNode::Impl
   {
     universal_gnss_protocols::RtcmCorrectionHealthOptions options;
     options.now_timestamp_ns = now_ns;
-    options.stale_after_ns = kCorrectionStaleAfterNs;
+    options.stale_after_ns = config_.correction_stale_after.count();
     options.required_observation_window_ns = kCorrectionRequirementWindowNs;
     options.startup_grace_ns = kCorrectionRequirementStartupGraceNs;
     universal_gnss_protocols::ConfigurePortableRtkCorrectionRequirements(options);
@@ -704,12 +766,19 @@ struct NtripNode::Impl
       }
     }
 
-    if (rtcm_published_frames_ > 0u)
+    if (HasRecentRtcmPublishedFrame(now))
     {
       summary.AddEvent(MakeEvent(universal_gnss::GnssDiagnosticSeverity::kOk,
                                  universal_gnss::GnssDiagnosticCategory::kCorrection,
                                  "rtcm_forwarding_active",
                                  "RTCM frames are being published for live receiver forwarding"));
+    }
+    else if (HasStaleRtcmPublishedFrame(now))
+    {
+      summary.AddEvent(MakeEvent(universal_gnss::GnssDiagnosticSeverity::kWarning,
+                                 universal_gnss::GnssDiagnosticCategory::kTiming,
+                                 "rtcm_forwarding_stale",
+                                 "RTCM frames were published previously but are now stale"));
     }
 
     if (config_.ntrip.send_gga)
@@ -774,10 +843,16 @@ struct NtripNode::Impl
     status.name = "universal_gnss_ntrip/rtcm_forwarding";
     status.hardware_id = hardware_id_;
 
-    if (rtcm_published_frames_ > 0u)
+    const auto now = SteadyClock::now();
+    if (HasRecentRtcmPublishedFrame(now))
     {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::OK;
       status.message = "RTCM forwarding active";
+    }
+    else if (HasStaleRtcmPublishedFrame(now))
+    {
+      status.level = diagnostic_msgs::msg::DiagnosticStatus::WARN;
+      status.message = "RTCM forwarding waiting for fresh frames";
     }
     else if (client_.has_value() &&
              client_->state() == universal_gnss_ntrip::NtripClientState::kStreaming)
@@ -801,13 +876,25 @@ struct NtripNode::Impl
     if (last_rtcm_published_time_.has_value())
     {
       const auto age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-          SteadyClock::now() - *last_rtcm_published_time_);
+          now - *last_rtcm_published_time_);
       std::ostringstream stream;
       stream << (static_cast<double>(age_ms.count()) / 1000.0);
       status.values.push_back(MakeKeyValue("last_frame_age_s", stream.str()));
     }
 
     diagnostics.status.push_back(std::move(status));
+  }
+
+  bool HasRecentRtcmPublishedFrame(const SteadyClock::time_point now) const
+  {
+    return last_rtcm_published_time_.has_value() &&
+           now - *last_rtcm_published_time_ <= config_.correction_stale_after;
+  }
+
+  bool HasStaleRtcmPublishedFrame(const SteadyClock::time_point now) const
+  {
+    return last_rtcm_published_time_.has_value() &&
+           now - *last_rtcm_published_time_ > config_.correction_stale_after;
   }
 
   void LogClientTransition(const universal_gnss_ntrip::NtripClientState state,

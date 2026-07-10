@@ -708,6 +708,50 @@ TEST_F(NtripNodeTest, ReportsReconnectStateAfterStreamDisconnect)
             std::optional<std::string>{"false"});
 }
 
+TEST_F(NtripNodeTest, ReconnectsWhenStreamingCorrectionDataStales)
+{
+  SocketPair sockets;
+  ASSERT_TRUE(sockets.Open());
+
+  rclcpp::NodeOptions options;
+  options.parameter_overrides(std::vector<rclcpp::Parameter>{
+      rclcpp::Parameter("caster_host", "127.0.0.1"),
+      rclcpp::Parameter("caster_port", 2101),
+      rclcpp::Parameter("mountpoint", "RTCM3"),
+      rclcpp::Parameter("gga_enabled", false),
+      rclcpp::Parameter("rtcm_stale_timeout_s", 0.05),
+  });
+
+  universal_gnss_ros2::NtripNode node(sockets.ReleaseClientFd(), options);
+  EXPECT_TRUE(node.StepOnce());
+  ASSERT_TRUE(sockets.WritePeer("ICY 200 OK\r\nNtrip-Version: Ntrip/2.0\r\n\r\n"));
+  ASSERT_TRUE(sockets.WritePeer(BuildRtcmFrame(1077u)));
+
+  for (std::size_t attempt = 0u; attempt < 8u && !node.last_rtcm_message().has_value(); ++attempt)
+  {
+    node.StepOnce();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(node.last_rtcm_message().has_value());
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  EXPECT_TRUE(node.StepOnce());
+  node.PublishNow();
+
+  ASSERT_TRUE(node.last_diagnostics_message().has_value());
+  const auto& diagnostics = *node.last_diagnostics_message();
+  const auto* reconnecting =
+      FindDiagnosticStatusByName(diagnostics, "universal_gnss_ntrip/ntrip_reconnecting");
+  ASSERT_NE(reconnecting, nullptr);
+  EXPECT_EQ(reconnecting->level, diagnostic_msgs::msg::DiagnosticStatus::WARN);
+
+  const auto* forwarding =
+      FindDiagnosticStatusByName(diagnostics, "universal_gnss_ntrip/rtcm_forwarding");
+  ASSERT_NE(forwarding, nullptr);
+  EXPECT_EQ(forwarding->level, diagnostic_msgs::msg::DiagnosticStatus::WARN);
+  EXPECT_EQ(forwarding->message, "RTCM forwarding waiting for fresh frames");
+}
+
 TEST_F(NtripNodeTest, DoesNotInjectGgaWithoutStatusAndReportsMissingSource)
 {
   SocketPair sockets;

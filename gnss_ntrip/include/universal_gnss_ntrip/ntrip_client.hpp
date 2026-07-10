@@ -82,6 +82,9 @@ public:
       std::optional<universal_gnss::GnssTimestampNs> timestamp_ns = std::nullopt);
   NtripClientError AdoptConnectedSocket(int fd);
   void Disconnect(NtripClientError error = NtripClientError::kNone);
+  NtripClientError Fail(
+      NtripClientError error,
+      std::optional<universal_gnss::GnssTimestampNs> timestamp_ns = std::nullopt);
 
   NtripClientError SendRequest(
       std::optional<universal_gnss::GnssTimestampNs> timestamp_ns = std::nullopt);

@@ -329,6 +329,13 @@ void NtripClient::Disconnect(const NtripClientError error)
   MarkDisconnected(metrics_, error);
 }
 
+NtripClientError NtripClient::Fail(
+    const NtripClientError error,
+    const std::optional<universal_gnss::GnssTimestampNs> timestamp_ns)
+{
+  return FailWith(error, timestamp_ns);
+}
+
 NtripClientError NtripClient::SendRequest(
     const std::optional<universal_gnss::GnssTimestampNs> timestamp_ns)
 {
