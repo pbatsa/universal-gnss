@@ -9,8 +9,8 @@
 #include "universal_gnss/gnss_health.hpp"
 #include "universal_gnss/gnss_runtime_state.hpp"
 #include "universal_gnss_ntrip/gga_generator.hpp"
-#include "universal_gnss_ntrip/gga_injector.hpp"
 #include "universal_gnss_ntrip/gga_injection_policy.hpp"
+#include "universal_gnss_ntrip/gga_injector.hpp"
 #include "universal_gnss_ntrip/ntrip_config.hpp"
 #include "universal_gnss_ntrip/ntrip_metrics.hpp"
 #include "universal_gnss_ntrip/ntrip_request.hpp"
@@ -82,6 +82,8 @@ public:
       std::optional<universal_gnss::GnssTimestampNs> timestamp_ns = std::nullopt);
   NtripClientError AdoptConnectedSocket(int fd);
   void Disconnect(NtripClientError error = NtripClientError::kNone);
+  NtripClientError Fail(NtripClientError error,
+                        std::optional<universal_gnss::GnssTimestampNs> timestamp_ns = std::nullopt);
 
   NtripClientError SendRequest(
       std::optional<universal_gnss::GnssTimestampNs> timestamp_ns = std::nullopt);
