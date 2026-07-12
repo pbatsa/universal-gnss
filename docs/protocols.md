@@ -278,6 +278,9 @@ Current RTCM decode policy:
 - ECEF coordinates are exposed only as base-station metadata
 - `1230` is exposed through correction/RTCM state, not as direct-navigation
   rover runtime state
+- a decoded `1230` with no valid GLONASS code-phase bias values is reported in
+  semantic fields as `valid=false`, but does not by itself degrade correction
+  health; malformed `1230` payloads still raise warnings
 - MSM summary stays at the correction-stream/header level for now; observation
   payload values are not mapped yet
 

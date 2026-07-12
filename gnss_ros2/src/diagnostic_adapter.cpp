@@ -88,11 +88,24 @@ KeyValue MakeKeyValue(std::string key, std::string value)
   return entry;
 }
 
+bool IsBenignDecodedInvalidRtcmObservation(
+    const universal_gnss_protocols::RtcmSemanticObservation& observation)
+{
+  return observation.name == "glonass_code_phase_bias" && observation.decoded &&
+         !observation.valid && observation.malformed_count == 0u &&
+         observation.decode_failure_count == 0u;
+}
+
 std::uint8_t RtcmSemanticDiagnosticLevel(
     const universal_gnss_protocols::RtcmSemanticObservation& observation)
 {
-  if (observation.malformed_count > 0u || observation.decode_failure_count > 0u ||
-      (observation.decoded && !observation.valid))
+  if (observation.malformed_count > 0u || observation.decode_failure_count > 0u)
+  {
+    return DiagnosticStatus::WARN;
+  }
+
+  if (observation.decoded && !observation.valid &&
+      !IsBenignDecodedInvalidRtcmObservation(observation))
   {
     return DiagnosticStatus::WARN;
   }

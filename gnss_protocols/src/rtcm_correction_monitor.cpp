@@ -817,16 +817,6 @@ universal_gnss::GnssHealthSummary BuildRtcmCorrectionHealth(
                       std::string("rtcm_correction_monitor")});
   }
 
-  if (monitor.HasDecodedGlonassBias1230() && !monitor.LastGlonassBias1230Valid())
-  {
-    summary.AddEvent({universal_gnss::GnssDiagnosticSeverity::kWarning,
-                      universal_gnss::GnssDiagnosticCategory::kCorrection,
-                      "rtcm.1230_not_valid",
-                      "The latest RTCM 1230 GLONASS code-phase bias message is not marked valid",
-                      monitor.LastDecodedGlonassBias1230TimestampNs(),
-                      std::string("rtcm_correction_monitor")});
-  }
-
   if (monitor.MsmMalformedCount() > 0u)
   {
     summary.AddEvent({universal_gnss::GnssDiagnosticSeverity::kWarning,

@@ -675,6 +675,46 @@ void TestMsmMalformedHealthEvent(TestContext& ctx)
              "RTCM health should surface malformed MSM payloads as parser diagnostics");
 }
 
+void TestInvalidGlonassBiasDoesNotDegradeHealth(TestContext& ctx)
+{
+  RtcmCorrectionMonitor monitor;
+  RtcmFrame invalid_1230 = MakeValidRtcmFrame(1230u, 1000);
+  invalid_1230.payload = BuildRtcm1230Payload(42u,
+                                              false,
+                                              false,
+                                              false,
+                                              false,
+                                              false,
+                                              std::nullopt,
+                                              std::nullopt,
+                                              std::nullopt,
+                                              std::nullopt);
+  monitor.ObserveFrame(invalid_1230);
+
+  RtcmCorrectionHealthOptions options;
+  options.now_timestamp_ns = 1500;
+  options.stale_after_ns = 5000;
+  options.require_any_msm = false;
+  const GnssHealthSummary health = universal_gnss_protocols::BuildRtcmCorrectionHealth(
+      monitor,
+      options);
+
+  bool found_1230_not_valid = false;
+  for (const auto& event : health.events)
+  {
+    if (event.code == "rtcm.1230_not_valid")
+    {
+      found_1230_not_valid = true;
+      break;
+    }
+  }
+
+  ctx.Expect(monitor.HasDecodedGlonassBias1230() && !monitor.LastGlonassBias1230Valid(),
+             "decoded RTCM 1230 without bias values should remain visible as invalid metadata");
+  ctx.Expect(!found_1230_not_valid,
+             "decoded-but-invalid RTCM 1230 metadata should not create a health warning");
+}
+
 void TestHealthStates(TestContext& ctx)
 {
   RtcmCorrectionMonitor healthy_monitor;
@@ -820,6 +860,7 @@ int main()
   TestMsmDecodeTracking(ctx);
   TestMsmSemanticObservations(ctx);
   TestMsmMalformedHealthEvent(ctx);
+  TestInvalidGlonassBiasDoesNotDegradeHealth(ctx);
   TestHealthStates(ctx);
   TestPortableRtkRequirementsAccept1006(ctx);
   TestPortableRtkRequirementsUseRecentObservationWindow(ctx);

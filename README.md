@@ -233,6 +233,8 @@ Current implemented layers:
   - live RTCM forwarding from ROS2 into the receiver transport when writable
   - ROS2 diagnostic projection of portable RTCM semantic observations for
     base-station ARP, GLONASS `1230`, and MSM summary/per-message activity
+    without warning on well-formed `1230` messages that simply carry no valid
+    GLONASS bias values
   - `ReplayNode` for hardware-free `status` / `fix` / `diagnostics` replay with
     optional `rtcm` publication from sanitized logs
   - `NtripNode` wrapper publishing diagnostics for ROS-side NTRIP state
