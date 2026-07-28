@@ -1048,6 +1048,27 @@ ReceiverAutoConfigPlan BuildUnicorePlan(const ReceiverAutoConfigRequest& request
 
   ApplyUnicoreSignalProfile(
       request, plan, model_profile, profile, allow_automatic_signal_group_selection);
+
+  // An explicit operator rover dynamic-mode override wins over the profile's
+  // per-model default (for example UM980 defaults to MODE ROVER UAV). Only
+  // rover profiles carry a mode; runtime_only leaves it kUnspecified.
+  if (request.rover_dynamic_mode_override.has_value() &&
+      request.requested_profile != ReceiverAutoConfigProfile::kRuntimeOnly)
+  {
+    switch (*request.rover_dynamic_mode_override)
+    {
+      case ReceiverAutoConfigRoverDynamicMode::kUav:
+        profile.mode = UnicoreMode::kRoverUav;
+        break;
+      case ReceiverAutoConfigRoverDynamicMode::kSurveyMow:
+        profile.mode = UnicoreMode::kRoverSurveyMow;
+        break;
+      case ReceiverAutoConfigRoverDynamicMode::kRover:
+        profile.mode = UnicoreMode::kRover;
+        break;
+    }
+  }
+
   AppendUnicorePortableRoverModeWarning(plan, model_profile, profile);
 
   if (!request.signal_profile.has_value() && !request.signal_group_override.has_value() &&
@@ -1360,6 +1381,25 @@ std::optional<ReceiverAutoConfigSignalProfile> ParseReceiverAutoConfigSignalProf
   return std::nullopt;
 }
 
+std::optional<ReceiverAutoConfigRoverDynamicMode> ParseReceiverAutoConfigRoverDynamicMode(
+    const std::string_view rover_dynamic_mode)
+{
+  const std::string normalized = ToLowerCopy(rover_dynamic_mode);
+  if (normalized == "uav")
+  {
+    return ReceiverAutoConfigRoverDynamicMode::kUav;
+  }
+  if (normalized == "survey_mow" || normalized == "survey-mow")
+  {
+    return ReceiverAutoConfigRoverDynamicMode::kSurveyMow;
+  }
+  if (normalized == "rover")
+  {
+    return ReceiverAutoConfigRoverDynamicMode::kRover;
+  }
+  return std::nullopt;
+}
+
 std::optional<std::vector<std::uint8_t>> ParseUnicoreSignalGroupOverride(
     const std::string_view signal_group)
 {
@@ -1473,6 +1513,21 @@ const char* ToString(const ReceiverAutoConfigSignalProfile signal_profile)
   }
 
   return "balanced";
+}
+
+const char* ToString(const ReceiverAutoConfigRoverDynamicMode rover_dynamic_mode)
+{
+  switch (rover_dynamic_mode)
+  {
+    case ReceiverAutoConfigRoverDynamicMode::kUav:
+      return "uav";
+    case ReceiverAutoConfigRoverDynamicMode::kSurveyMow:
+      return "survey_mow";
+    case ReceiverAutoConfigRoverDynamicMode::kRover:
+      return "rover";
+  }
+
+  return "uav";
 }
 
 const char* ToString(const ReceiverAutoConfigOutputPort output_port)

@@ -325,6 +325,9 @@ void TestUnicoreRoverHighPrecisionPlans(TestContext& ctx)
 
   ReceiverAutoConfigRequest um980_request = generic_request;
   um980_request.receiver_model = "UM980";
+  // UM980 now defaults to MODE ROVER UAV (issue #395); request SURVEY MOW
+  // explicitly to keep exercising the build-gated survey-mow warning path.
+  um980_request.rover_dynamic_mode_override = ReceiverAutoConfigRoverDynamicMode::kSurveyMow;
   const auto um980_plan = BuildReceiverAutoConfigPlan(um980_request);
   ReceiverAutoConfigRequest um960_request = generic_request;
   um960_request.receiver_model = "UM960";
@@ -423,6 +426,9 @@ void TestSignalProfileCapabilityMapping(TestContext& ctx)
   um980_request.receiver_model = "UM980";
   um980_request.signal_profile = ReceiverAutoConfigSignalProfile::kBalanced;
   um980_request.rate_hz = 5.0;
+  // UM980 now defaults to MODE ROVER UAV (issue #395); request SURVEY MOW
+  // explicitly to keep asserting the build-gated survey-mow warning.
+  um980_request.rover_dynamic_mode_override = ReceiverAutoConfigRoverDynamicMode::kSurveyMow;
   const auto um980_plan = BuildReceiverAutoConfigPlan(um980_request);
   ctx.Expect(um980_plan.status == ReceiverAutoConfigPlanStatus::kOk &&
                  !ContainsCommandText(um980_plan, "CONFIG SIGNALGROUP") &&

@@ -220,7 +220,14 @@ Current `rover_high_precision` helper always generates the core rover/runtime
 commands:
 
 - `MODE ROVER` for unknown or unsupported models
-- `MODE ROVER SURVEY MOW` for documented mower-oriented models
+- `MODE ROVER UAV` for `UM980` (issue #395 default): the kinematic engine fixes
+  fast and holds RTK lock while the mower moves, matching OpenMower's proven
+  `MODE ROVER UAV`
+- `MODE ROVER SURVEY MOW` for the other documented mower-oriented models
+- The rover dynamic mode is overridable per apply via
+  `--rover-dynamic-mode <uav|survey_mow|rover>` (portable
+  `ReceiverAutoConfigRoverDynamicMode`); the override wins over the per-model
+  default and is ignored for `runtime_only`
 - `CONFIG NMEA0183 V411`
 - `CONFIG RTK TIMEOUT 10`
 - `CONFIG RTK RELIABILITY 3 1`
@@ -236,8 +243,9 @@ commands:
 
 Model-specific signal-group behavior:
 
-- `UM960`, `UM980`, `UM982`, and `UB9A0` use the documented mower-oriented
-  rover dynamic mode `MODE ROVER SURVEY MOW`
+- `UM980` defaults to `MODE ROVER UAV` (issue #395); `UM960`, `UM982`, and
+  `UB9A0` default to the documented mower-oriented `MODE ROVER SURVEY MOW`. All
+  four accept an explicit `--rover-dynamic-mode` override.
 - `UM980` requires `Build7923+` and `UM982` requires `Build7650+`; the current
   portable planner cannot verify firmware build metadata, so it emits a
   warning when those models are selected

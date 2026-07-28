@@ -427,6 +427,7 @@ ConfigPlanResult BuildConfigPlan(const ConfigPlanOptions& options)
   request.receiver_model = options.receiver_model;
   request.signal_profile = options.signal_profile;
   request.signal_group_override = options.signal_group_override;
+  request.rover_dynamic_mode_override = options.rover_dynamic_mode_override;
   request.output_port = options.output_port;
   request.config_baud = options.baud;
   request.rate_hz = options.rate_hz;

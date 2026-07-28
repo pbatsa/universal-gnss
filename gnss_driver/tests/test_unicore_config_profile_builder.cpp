@@ -157,13 +157,13 @@ void TestModelAwareRoverProfileGeneration(TestContext& ctx)
 
     ctx.Expect(result.status == UnicoreConfigProfileBuildStatus::kOk &&
                    result.commands.size() == 13u,
-               "UM980 rover helper should keep the lean command count while selecting the "
-               "documented mower-oriented rover mode");
+               "UM980 rover helper should keep the lean command count while defaulting to the "
+               "kinematic UAV rover mode (issue #395)");
     ExpectTextCommand(ctx,
                       result.commands.front(),
                       ReceiverCommandKind::kApplyConfigProfile,
                       ReceiverCommandSafetyLevel::kRuntime,
-                      "MODE ROVER SURVEY MOW",
+                      "MODE ROVER UAV",
                       "unicore_um980");
     ctx.Expect(std::none_of(result.commands.begin(),
                             result.commands.end(),

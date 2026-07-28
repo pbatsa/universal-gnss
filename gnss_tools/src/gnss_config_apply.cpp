@@ -60,6 +60,7 @@ void PrintUsage(const char* program_name)
             << "       [--apply-mode <dry-run|runtime-only|persistent|factory-reset>]\n"
             << "       [--signal-profile <balanced|high_precision|all_signals|minimal|custom>]"
             << " [--signal-group <\"3 6\"|\"3,6\"|\"3/6\"|...>]"
+            << " [--rover-dynamic-mode <uav|survey_mow|rover>]"
             << " [--model <UM960|UM980|UM981|UM982|UB9A0>]"
             << " [--output-port <usb|uart1|uart2|all|auto>] [--rate-hz <value>]\n"
             << "       [--timeout-ms <value>] [--confirm|--yes]\n"
@@ -566,6 +567,21 @@ int main(int argc, char** argv)
         return EXIT_FAILURE;
       }
       cli_options.apply.signal_group_override = *parsed;
+      continue;
+    }
+
+    if (argument == "--rover-dynamic-mode")
+    {
+      const auto parsed = universal_gnss_driver::ParseReceiverAutoConfigRoverDynamicMode(
+          require_value("--rover-dynamic-mode"));
+      if (!parsed.has_value())
+      {
+        std::cerr << "error: invalid --rover-dynamic-mode value (expected "
+                     "uav, survey_mow, or rover)\n";
+        PrintUsage(argv[0]);
+        return EXIT_FAILURE;
+      }
+      cli_options.apply.rover_dynamic_mode_override = *parsed;
       continue;
     }
 

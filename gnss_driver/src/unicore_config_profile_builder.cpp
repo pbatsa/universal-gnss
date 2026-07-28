@@ -92,7 +92,24 @@ const char* ToNmeaVersionString(const UnicoreNmeaVersion version)
 bool SupportsRuntimeMode(const UnicoreMode mode)
 {
   return mode == UnicoreMode::kUnspecified || mode == UnicoreMode::kRover ||
-         mode == UnicoreMode::kRoverSurveyMow;
+         mode == UnicoreMode::kRoverSurveyMow || mode == UnicoreMode::kRoverUav;
+}
+
+UnicoreMode DefaultUnicoreRoverDynamicMode(const UnicoreModelProfile& model_profile)
+{
+  // UM980 defaults to the kinematic UAV engine (issue #395): it fixes fast and
+  // holds RTK lock while the mower is moving, matching OpenMower's proven
+  // `MODE ROVER UAV`. `MODE ROVER SURVEY MOW` (the previous default) is tuned
+  // for near-static survey and is slow to commit a fix / prone to dropping it
+  // under motion. Other documented mower models keep SURVEY MOW; unknown models
+  // fall back to the generic MODE ROVER. Operators can override per receiver via
+  // the rover dynamic-mode selector.
+  if (model_profile.model_id == UnicoreModel::kUm980)
+  {
+    return UnicoreMode::kRoverUav;
+  }
+  return SupportsUnicorePortableRoverSurveyMow(model_profile) ? UnicoreMode::kRoverSurveyMow
+                                                              : UnicoreMode::kRover;
 }
 
 std::string BuildModeCommand(const UnicoreMode mode)
@@ -109,6 +126,8 @@ std::string BuildModeCommand(const UnicoreMode mode)
       return "MODE ROVER SURVEY";
     case UnicoreMode::kRoverSurveyMow:
       return "MODE ROVER SURVEY MOW";
+    case UnicoreMode::kRoverUav:
+      return "MODE ROVER UAV";
   }
 
   return {};
@@ -422,8 +441,7 @@ UnicoreConfigProfile UnicoreConfigProfileBuilder::BuildUnicoreRoverProfile(
   UnicoreConfigProfile profile;
   profile.target = BuildUnicoreTargetSelector(model_profile);
   profile.config_kind = ReceiverConfigProfileKind::kRover;
-  profile.mode = SupportsUnicorePortableRoverSurveyMow(model_profile) ? UnicoreMode::kRoverSurveyMow
-                                                                      : UnicoreMode::kRover;
+  profile.mode = DefaultUnicoreRoverDynamicMode(model_profile);
   profile.nmea_version = UnicoreNmeaVersion::kV411;
   profile.rtk_timeout_s = 10u;
   profile.rtk_reliability = UnicoreRtkReliability{3, 1};
