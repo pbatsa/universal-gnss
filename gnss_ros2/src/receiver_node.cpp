@@ -35,6 +35,7 @@
 #include "universal_gnss_ros2/msg/rtcm_frame.hpp"
 #include "universal_gnss_ros2/navsat_fix_adapter.hpp"
 #include "universal_gnss_transport/byte_stream.hpp"
+#include "universal_gnss_transport/frame_writer.hpp"
 #include "universal_gnss_transport/posix_serial_transport.hpp"
 #include "universal_gnss_transport/tcp_client_transport.hpp"
 
@@ -812,38 +813,30 @@ struct ReceiverNode::Impl
       return;
     }
 
-    const auto write_all = [&](const std::uint8_t* data,
-                               const std::size_t size) -> universal_gnss_transport::WriteResult
-    {
-      universal_gnss_transport::WriteResult final_result{};
-      std::size_t offset = 0u;
-      while (offset < size)
-      {
-        const auto result =
-            transport_sink_->Write(data + static_cast<std::ptrdiff_t>(offset), size - offset);
-        final_result.bytes_written += result.bytes_written;
-        final_result.status = result.status;
-        final_result.error = result.error;
-        if (result.status != universal_gnss_transport::TransportStatus::kOk ||
-            result.bytes_written == 0u)
-        {
-          break;
-        }
-        offset += result.bytes_written;
-      }
-      return final_result;
-    };
-
-    const auto result = write_all(message.data.data(), message.data.size());
-    if (result.status != universal_gnss_transport::TransportStatus::kOk ||
-        result.bytes_written != message.data.size())
+    // RTCM3 is a framed protocol: a frame that only partly reaches the receiver
+    // fails its CRC and is discarded. WriteFrame therefore waits out a
+    // momentarily full TX buffer instead of abandoning the frame mid-way.
+    const auto result = universal_gnss_transport::WriteFrame(
+        *transport_sink_, message.data.data(), message.data.size());
+    if (!result.complete)
     {
       ++rtcm_forward_write_errors_;
+      if (result.truncated)
+      {
+        ++rtcm_forward_truncated_frames_;
+      }
       transport_ready_ = transport_source_ != nullptr && transport_source_->IsOpen();
       last_rtcm_forward_failure_message_ =
-          "Failed to forward RTCM corrections: " + std::string(ToString(result.error));
+          std::string(result.truncated ? "Truncated RTCM correction frame on the wire: "
+                                       : "Failed to forward RTCM corrections: ") +
+          std::string(ToString(result.error)) +
+          (result.status == universal_gnss_transport::TransportStatus::kOk
+               ? " (transport stalled)"
+               : "");
       return;
     }
+
+    rtcm_forward_stall_retries_ += result.stall_retries;
 
     ++rtcm_forwarded_frames_;
     rtcm_forwarded_bytes_ += result.bytes_written;
@@ -1185,6 +1178,10 @@ struct ReceiverNode::Impl
     status.values.push_back(MakeKeyValue("forwarded_bytes", std::to_string(rtcm_forwarded_bytes_)));
     status.values.push_back(
         MakeKeyValue("write_error_count", std::to_string(rtcm_forward_write_errors_)));
+    status.values.push_back(MakeKeyValue("truncated_frame_count",
+                                         std::to_string(rtcm_forward_truncated_frames_)));
+    status.values.push_back(
+        MakeKeyValue("stall_retry_count", std::to_string(rtcm_forward_stall_retries_)));
     status.values.push_back(
         MakeKeyValue("receiver_correction_available",
                      (HasCorrectionAvailability(state) || HasReceiverReportedRtcmCorrections())
@@ -1676,6 +1673,13 @@ struct ReceiverNode::Impl
   std::size_t rtcm_forwarded_frames_{0u};
   std::size_t rtcm_forwarded_bytes_{0u};
   std::size_t rtcm_forward_write_errors_{0u};
+  // Frames whose PREFIX reached the wire but could not be finished: the
+  // receiver saw a corrupt frame, which is a different failure from a frame
+  // that was never sent at all.
+  std::size_t rtcm_forward_truncated_frames_{0u};
+  // Zero-progress write attempts that were waited out. Non-zero means the
+  // link is at or near saturation even when every frame completed.
+  std::size_t rtcm_forward_stall_retries_{0u};
   std::size_t last_malformed_record_count_{0u};
   std::size_t last_rejected_record_count_{0u};
   std::size_t last_parser_anomaly_count_{0u};
