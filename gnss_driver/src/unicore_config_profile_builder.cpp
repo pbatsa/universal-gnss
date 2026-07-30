@@ -14,6 +14,24 @@ namespace
 {
 
 constexpr const char* kCrLf = "\r\n";
+
+// RTK / DGPS correction-age windows for the rover helper (issue #395).
+//
+// These now match the receiver's own documented defaults, because every
+// field-proven UM98x rover configuration leaves them alone: the UM980 ships
+// with `CONFIG RTK TIMEOUT 120` + `CONFIG DGPS TIMEOUT 300`, Centipede's
+// reference rover config uses 180/300, and OpenMower never sends either
+// command.
+//
+// The previous 10 s RTK window was 12x shorter than any of those: it aged out
+// base observations — and with them the RTK filter state — on every correction
+// gap longer than 10 s, forcing a full ambiguity re-convergence. The paired
+// 600 s DGPS window then let the receiver sit in a DGPS solution for up to ten
+// minutes instead of pushing back toward RTK. Together they reproduce the
+// reported "loses RTK-Fixed, then hours to reacquire" signature on a stream
+// whose corrections are otherwise healthy.
+constexpr std::uint32_t kUnicoreRoverRtkTimeoutS = 120u;
+constexpr std::uint32_t kUnicoreRoverDgpsTimeoutS = 300u;
 constexpr std::array<double, 6u> kSupportedUnicoreOutputPeriodsS{
     1.0,
     0.5,
@@ -443,9 +461,11 @@ UnicoreConfigProfile UnicoreConfigProfileBuilder::BuildUnicoreRoverProfile(
   profile.config_kind = ReceiverConfigProfileKind::kRover;
   profile.mode = DefaultUnicoreRoverDynamicMode(model_profile);
   profile.nmea_version = UnicoreNmeaVersion::kV411;
-  profile.rtk_timeout_s = 10u;
+  profile.rtk_timeout_s = kUnicoreRoverRtkTimeoutS;
+  // 3 1 is the receiver's documented default reliability; kept explicit so an
+  // operator who tightened it by hand gets the known-good value back.
   profile.rtk_reliability = UnicoreRtkReliability{3, 1};
-  profile.dgps_timeout_s = 600u;
+  profile.dgps_timeout_s = kUnicoreRoverDgpsTimeoutS;
   if (const auto* signal_group = FindUnicorePortableRoverSignalGroupSelection(model_profile);
       signal_group != nullptr)
   {

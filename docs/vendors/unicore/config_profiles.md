@@ -229,9 +229,19 @@ commands:
   `ReceiverAutoConfigRoverDynamicMode`); the override wins over the per-model
   default and is ignored for `runtime_only`
 - `CONFIG NMEA0183 V411`
-- `CONFIG RTK TIMEOUT 10`
+- `CONFIG RTK TIMEOUT 120`
 - `CONFIG RTK RELIABILITY 3 1`
-- `CONFIG DGPS TIMEOUT 600`
+- `CONFIG DGPS TIMEOUT 300`
+
+The RTK/DGPS correction-age windows deliberately match the receiver's own
+documented defaults (`120` / `300`), because every field-proven UM98x rover
+configuration leaves them alone — Centipede's reference rover config uses
+`180`/`300`, and OpenMower sends neither command. The earlier `10` / `600` pair
+aged out base observations (and the RTK filter state with them) on any
+correction gap longer than 10 s, then allowed the receiver to sit in a DGPS
+solution for up to ten minutes, which reproduced a "loses RTK-Fixed, then very
+slow to reacquire" signature on otherwise healthy correction streams
+(issue #395).
 - `GPGGA 1`
 - `GPGSV 1`
 - `GPGST 1`

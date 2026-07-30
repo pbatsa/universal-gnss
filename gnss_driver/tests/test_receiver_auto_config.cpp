@@ -22,6 +22,7 @@ using universal_gnss_driver::ReceiverAutoConfigOutputPort;
 using universal_gnss_driver::ReceiverAutoConfigPlanStatus;
 using universal_gnss_driver::ReceiverAutoConfigProfile;
 using universal_gnss_driver::ReceiverAutoConfigRequest;
+using universal_gnss_driver::ReceiverAutoConfigRoverDynamicMode;
 using universal_gnss_driver::ReceiverAutoConfigSignalProfile;
 using universal_gnss_driver::ReceiverDetectedFamily;
 using universal_gnss_driver::ReceiverFeature;

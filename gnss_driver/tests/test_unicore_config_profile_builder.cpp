@@ -95,8 +95,14 @@ void TestRoverProfileGeneration(TestContext& ctx)
                     ReceiverCommandKind::kApplyConfigProfile,
                     ReceiverCommandSafetyLevel::kRuntime,
                     "CONFIG NMEA0183 V411");
-  ctx.Expect(ContainsText(result.commands[4], "CONFIG DGPS TIMEOUT 600"),
-             "unicore rover helper should include the conservative DGPS timeout command");
+  ctx.Expect(ContainsText(result.commands[2], "CONFIG RTK TIMEOUT 120"),
+             "unicore rover helper should keep the receiver's documented 120 s RTK correction-age "
+             "window so a short correction gap does not tear down the RTK filter");
+  ctx.Expect(ContainsText(result.commands[3], "CONFIG RTK RELIABILITY 3 1"),
+             "unicore rover helper should keep the documented default RTK reliability");
+  ctx.Expect(ContainsText(result.commands[4], "CONFIG DGPS TIMEOUT 300"),
+             "unicore rover helper should keep the receiver's documented 300 s DGPS timeout "
+             "instead of parking the receiver in DGPS for ten minutes");
   ctx.Expect(!ContainsText(result.commands[5], "CONFIG SIGNALGROUP"),
              "generic unicore rover helper should not guess a signal-group selection");
   ctx.Expect(!ContainsText(result.commands[5], "UNLOG"),
